@@ -1,58 +1,89 @@
 package com.empresa.aplicacionedgeimpulse
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.net.Uri
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.telephony.SmsManager
+import android.util.Log
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.empresa.aplicacionedgeimpulse.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
-    private lateinit var binding: ActivityMainBinding
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     private var isMonitoring = false
 
-    private val PERMISSION_REQUEST_CODE = 100
+    private lateinit var etPhone: EditText
+    private lateinit var btnToggleMonitor: Button
+    private lateinit var tvStatus: TextView
+    private lateinit var tvPrediction: TextView
 
-    // Búfer para almacenar los datos de X, Y, Z antes de enviarlos a Edge Impulse
-    private val sensorDataBuffer = mutableListOf<Float>()
-    // La cantidad máxima de muestras depende de la configuración de tu modelo (ventana x frecuencia)
-    private val MAX_SAMPLES = 300
+    // Configuración de Edge Impulse
+    private val bufferSize = 300 // Cambiar por el valor exacto de EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE de tu modelo
+    private val featuresBuffer = FloatArray(bufferSize)
+    private var bufferIndex = 0
+
+    // Temporizador de 5 segundos
+    private var fallTimer: CountDownTimer? = null
+    private var isTimerRunning = false
+    private val FALL_THRESHOLD = 0.85f // Umbral de confianza
+    private val FALL_CLASSES = listOf("caida_adelante", "caida_atras", "caida_lateral") // Ajustar a los nombres exactos de tus clases de caída
+
+    companion object {
+        private const val TAG = "EdgeImpulseAppLogs"
+        private const val PERMISSION_REQUEST_CODE = 101
+
+        init {
+            System.loadLibrary("aplicacionedgeimpulse")
+        }
+    }
+
+    external fun runClassification(features: FloatArray): String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_main)
 
-        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        etPhone = findViewById(R.id.etPhone)
+        btnToggleMonitor = findViewById(R.id.btnToggleMonitor)
+        tvStatus = findViewById(R.id.tvStatus)
+        tvPrediction = findViewById(R.id.tvPrediction)
+
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-        requestPermissions()
+        checkPermissions()
 
-        binding.btnStartMonitoring.setOnClickListener {
+        btnToggleMonitor.setOnClickListener {
+            val phone = etPhone.text.toString()
+            if (phone.isEmpty()) {
+                Toast.makeText(this, "Ingresa un número válido", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             if (isMonitoring) {
                 stopMonitoring()
             } else {
-                val number = binding.etPhoneNumber.text.toString()
-                if (number.length == 10) {
-                    startMonitoring()
-                } else {
-                    Toast.makeText(this, "Ingresa un número de 10 dígitos", Toast.LENGTH_SHORT).show()
-                }
+                startMonitoring()
             }
         }
     }
 
-    private fun requestPermissions() {
+    private fun checkPermissions() {
         val permissions = arrayOf(
             Manifest.permission.SEND_SMS,
             Manifest.permission.CALL_PHONE
@@ -67,65 +98,144 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun startMonitoring() {
         accelerometer?.let {
-            // SENSOR_DELAY_GAME equivale a ~50Hz. Ajusta según la frecuencia de muestreo de tu modelo.
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
             isMonitoring = true
-            binding.btnStartMonitoring.text = "Detener Monitoreo"
-            binding.tvStatus.text = "Estado: Monitoreando..."
-            sensorDataBuffer.clear()
-        } ?: Toast.makeText(this, "Acelerómetro no disponible", Toast.LENGTH_SHORT).show()
+            btnToggleMonitor.text = "Detener Monitoreo"
+            tvStatus.text = "Monitoreando..."
+            bufferIndex = 0
+            logInfo("Monitoreo iniciado.")
+        } ?: logError("Acelerómetro no disponible.")
     }
 
     private fun stopMonitoring() {
         sensorManager.unregisterListener(this)
         isMonitoring = false
-        binding.btnStartMonitoring.text = "Iniciar Monitoreo"
-        binding.tvStatus.text = "Estado: Inactivo"
+        btnToggleMonitor.text = "Iniciar Monitoreo"
+        tvStatus.text = "Detenido"
+        cancelFallTimer()
+        logInfo("Monitoreo detenido.")
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
-            sensorDataBuffer.add(event.values[0])
-            sensorDataBuffer.add(event.values[1])
-            sensorDataBuffer.add(event.values[2])
+        if (event == null || !isMonitoring) return
 
-            if (sensorDataBuffer.size >= MAX_SAMPLES) {
-                // Se pasa el arreglo de datos a la función nativa de C++
-                val result = runInference(sensorDataBuffer.toFloatArray())
-                sensorDataBuffer.clear()
+        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            // Edge Impulse generalmente usa m/s^2. Asegúrate de que las unidades coincidan con tus datos de entrenamiento.
+            featuresBuffer[bufferIndex++] = event.values[0]
+            featuresBuffer[bufferIndex++] = event.values[1]
+            featuresBuffer[bufferIndex++] = event.values[2]
 
-                // Validar la salida nativa. Asegúrate que coincida con la etiqueta de tu modelo.
-                if (result.contains("caida", ignoreCase = true)) {
-                    triggerEmergency()
-                }
+            if (bufferIndex >= bufferSize) {
+                bufferIndex = 0
+                performInference()
             }
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    private fun triggerEmergency() {
-        stopMonitoring()
-        val number = binding.etPhoneNumber.text.toString()
-        binding.tvStatus.text = "Estado: ¡Caída detectada! Alerta enviada."
+    private fun performInference() {
+        val resultString = runClassification(featuresBuffer)
 
-        try {
-            val smsManager = SmsManager.getDefault()
-            smsManager.sendTextMessage(number, null, "Alerta: Posible caída detectada.", null, null)
-            Toast.makeText(this, "SMS enviado a $number", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error al enviar SMS", Toast.LENGTH_SHORT).show()
+        if (resultString.startsWith("ERROR")) {
+            logError("Fallo en inferencia: $resultString")
+            return
+        }
+
+        val parts = resultString.split("|")
+        if (parts.size == 2) {
+            val label = parts[0]
+            val confidence = parts[1].toFloatOrNull() ?: 0f
+
+            runOnUiThread {
+                tvPrediction.text = "Predicción: $label (${String.format("%.2f", confidence)})"
+            }
+
+            logInfo("Inferencia completada: $label ($confidence)")
+
+            if (FALL_CLASSES.contains(label) && confidence >= FALL_THRESHOLD) {
+                if (!isTimerRunning) {
+                    logInfo("Posible caída detectada ($label). Iniciando temporizador de 5 segundos.")
+                    startFallTimer(label)
+                }
+            } else {
+                // Opcional: Cancelar el temporizador si se detecta una clase de recuperación o movimiento normal de alta confianza
+                // if (label == "recuperacion" && confidence > 0.9f) cancelFallTimer()
+            }
         }
     }
 
-    /**
-     * Método que llama a la librería en C++ pasándole el búfer del acelerómetro
-     */
-    external fun runInference(data: FloatArray): String
+    private fun startFallTimer(fallType: String) {
+        isTimerRunning = true
+        runOnUiThread { tvStatus.text = "¡Alerta! Caída: $fallType en 5s..." }
 
-    companion object {
-        init {
-            System.loadLibrary("aplicacionedgeimpulse")
+        fallTimer = object : CountDownTimer(5000, 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                val sec = millisUntilFinished / 1000
+                logInfo("Temporizador de caída: ${sec}s restantes.")
+                runOnUiThread { tvStatus.text = "¡Alerta en ${sec}s!" }
+            }
+
+            override fun onFinish() {
+                isTimerRunning = false
+                logInfo("Temporizador finalizado. Ejecutando protocolo de emergencia.")
+                runOnUiThread { tvStatus.text = "Enviando alerta..." }
+                executeEmergencyProtocol(fallType)
+            }
+        }.start()
+    }
+
+    private fun cancelFallTimer() {
+        fallTimer?.cancel()
+        isTimerRunning = false
+        runOnUiThread { if (isMonitoring) tvStatus.text = "Monitoreando..." }
+        logInfo("Temporizador de caída cancelado.")
+    }
+
+    private fun executeEmergencyProtocol(fallType: String) {
+        val phoneNumber = etPhone.text.toString()
+        if (phoneNumber.isNotEmpty()) {
+            sendSMS(phoneNumber, "Alerta de Emergencia: Se ha detectado una caída del tipo '$fallType'.")
+            makeCall(phoneNumber)
+        } else {
+            logError("Número de teléfono no configurado para alerta.")
         }
+        // Reiniciar estado
+        if(isMonitoring) {
+            runOnUiThread { tvStatus.text = "Monitoreando..." }
+        }
+    }
+
+    private fun sendSMS(phoneNumber: String, message: String) {
+        try {
+            val smsManager = SmsManager.getDefault()
+            smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+            logInfo("SMS enviado a $phoneNumber")
+            Toast.makeText(this, "SMS enviado", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            logError("Error al enviar SMS: ${e.message}")
+        }
+    }
+
+    private fun makeCall(phoneNumber: String) {
+        try {
+            val intent = Intent(Intent.ACTION_CALL)
+            intent.data = Uri.parse("tel:$phoneNumber")
+            startActivity(intent)
+            logInfo("Llamada iniciada a $phoneNumber")
+        } catch (e: SecurityException) {
+            logError("Permiso denegado para realizar llamada.")
+        } catch (e: Exception) {
+            logError("Error al realizar llamada: ${e.message}")
+        }
+    }
+
+    // Funciones de Logs
+    private fun logInfo(message: String) {
+        Log.i(TAG, message)
+    }
+
+    private fun logError(message: String) {
+        Log.e(TAG, message)
     }
 }
