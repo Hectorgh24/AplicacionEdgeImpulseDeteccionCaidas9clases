@@ -37,8 +37,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val featuresBuffer = FloatArray(bufferSize)
     private var bufferIndex = 0
 
-    private val FALL_THRESHOLD = 0.85f // Umbral de confianza
+    private val FALL_THRESHOLD = 0.90f // Umbral de confianza más estricto
+    private val REQUIRED_CONSECUTIVE_FALL_WINDOWS = 2 // Confirmar en ventanas consecutivas
+    private val ALERT_COOLDOWN_MS = 3000L // Evita múltiples alertas por el mismo evento
     private var isAlertActive = false
+    private var consecutiveFallDetections = 0
+    private var lastAlertTimestamp = 0L
     
     // Clases que representan caídas
     private val FALL_CLASSES = listOf(
@@ -143,6 +147,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             btnToggleMonitor.text = "Detener Monitoreo"
             tvStatus.text = "Monitoreando..."
             bufferIndex = 0
+            consecutiveFallDetections = 0
+            lastAlertTimestamp = 0L
+            MonitoringLogManager.startSession(this, etPhone.text.toString().trim())
             logInfo("Monitoreo iniciado.")
         } ?: logError("Acelerómetro no disponible.")
     }
@@ -152,6 +159,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         isMonitoring = false
         btnToggleMonitor.text = "Iniciar Monitoreo"
         tvStatus.text = "Detenido"
+        MonitoringLogManager.stopSession(this)
         logInfo("Monitoreo detenido.")
     }
 
@@ -189,18 +197,42 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             val percentage = (confidence * 100).roundToInt()
             val translatedLabel = labelDisplayNames[label] ?: label
+            val predictionText = "$translatedLabel ($percentage%)"
 
             runOnUiThread {
-                tvPrediction.text = "Predicción: $translatedLabel ($percentage%)"
+                tvPrediction.text = "Predicción: $predictionText"
             }
 
             logInfo("Inferencia completada: $label ($percentage%)")
+            MonitoringLogManager.updatePrediction(this, predictionText)
+            MonitoringLogManager.recordWindow(this)
 
-            if (FALL_CLASSES.contains(label) && confidence >= FALL_THRESHOLD) {
-                logInfo("Posible caída detectada ($label). Lanzando AlertActivity.")
+            if (isValidFallDetection(label, confidence)) {
+                MonitoringLogManager.recordFall(this)
+                logInfo("Caída confirmada ($label). Lanzando AlertActivity.")
                 startFallAlert(translatedLabel)
             }
         }
+    }
+
+    private fun isValidFallDetection(label: String, confidence: Float): Boolean {
+        val isFallLabel = FALL_CLASSES.contains(label)
+        val meetsThreshold = confidence >= FALL_THRESHOLD
+        val now = System.currentTimeMillis()
+        val isCoolingDown = (now - lastAlertTimestamp) < ALERT_COOLDOWN_MS
+
+        if (isFallLabel && meetsThreshold && !isCoolingDown) {
+            consecutiveFallDetections += 1
+            if (consecutiveFallDetections >= REQUIRED_CONSECUTIVE_FALL_WINDOWS) {
+                consecutiveFallDetections = 0
+                lastAlertTimestamp = now
+                return true
+            }
+        } else if (!isFallLabel) {
+            consecutiveFallDetections = 0
+        }
+
+        return false
     }
 
     private fun startFallAlert(fallType: String) {
@@ -219,9 +251,32 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (requestCode == REQUEST_CODE_ALERT) {
             isAlertActive = false
             bufferIndex = 0
+            consecutiveFallDetections = 0
             if (isMonitoring) {
                 tvStatus.text = "Monitoreando..."
             }
+        }
+    }
+
+    override fun onDestroy() {
+        if (isMonitoring) {
+            MonitoringLogManager.stopSession(this)
+        }
+        super.onDestroy()
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java))
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
         }
     }
 

@@ -88,6 +88,8 @@ class AlertActivity : AppCompatActivity() {
         mediaPlayer?.stop()
         mediaPlayer?.release()
         mediaPlayer = null
+
+        MonitoringLogManager.recordAlert(this)
         
         Toast.makeText(this, "Ejecutando protocolo de emergencia...", Toast.LENGTH_LONG).show()
 

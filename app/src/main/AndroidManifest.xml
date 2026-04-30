@@ -27,6 +27,7 @@
         </activity>
 
         <activity android:name=".AlertActivity" />
+        <activity android:name=".SettingsActivity" />
 
     </application>
 
