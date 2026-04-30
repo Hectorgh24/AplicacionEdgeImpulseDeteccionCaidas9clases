@@ -18,14 +18,14 @@ La app toma datos del acelerometro, ejecuta inferencia con TensorFlow Lite Micro
 
 ## Clases detectadas por la app
 En el codigo de la app, las clases consideradas como caida son:
-- `fall_backward`
-- `fall_bending`
-- `fall_forward`
-- `fall_hand`
-- `fall_sideward_left`
-- `fall_sideward_right`
-- `fall_sitting`
-- `fall_syncope`
+- `fall_backward` (caida hacia atras)
+- `fall_bending` (caida al agacharse)
+- `fall_forward` (caida hacia adelante)
+- `fall_hand` (caida con apoyo de manos)
+- `fall_sideward_left` (caida lateral izquierda)
+- `fall_sideward_right` (caida lateral derecha)
+- `fall_sitting` (caida al sentarse)
+- `fall_syncope` (sincope / desmayo)
 
 Ademas, la interfaz contempla etiquetas no-caida como `walk`, `stand`, `sit`, `idle`, `normal` y `running` (si existen en la salida del modelo).
 
