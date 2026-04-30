@@ -1,59 +1,58 @@
 #include <jni.h>
 #include <string>
-#include <vector>
-#include "edge-impulse-sdk/classifier/ei_run_classifier.h"
 #include <android/log.h>
+#include "edge-impulse-sdk/classifier/ei_run_classifier.h"
 
-#define TAG "EdgeImpulseNative"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define LOG_TAG "EdgeImpulseNative"
+#define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_empresa_aplicacionedgeimpulse_MainActivity_runClassification(
-        JNIEnv *env,
+        JNIEnv* env,
         jobject /* this */,
         jfloatArray features) {
 
-    jfloat *features_array = env->GetFloatArrayElements(features, 0);
-    jsize length = env->GetArrayLength(features);
+    jfloat* features_data = env->GetFloatArrayElements(features, nullptr);
+    jsize features_length = env->GetArrayLength(features);
 
-    if (length != EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE) {
-        LOGE("Error: El tamaño del array (%d) no coincide con el esperado por el modelo (%d)", length, EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
-        env->ReleaseFloatArrayElements(features, features_array, 0);
-        return env->NewStringUTF("ERROR_SIZE");
+    if (features_length != EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE) {
+        env->ReleaseFloatArrayElements(features, features_data, JNI_ABORT);
+        return env->NewStringUTF("ERROR: Tamaño de buffer incorrecto");
     }
 
-    signal_t signal;
-    int err = numpy::signal_from_buffer(features_array, length, &signal);
+    signal_t features_signal;
+    int err = numpy::signal_from_buffer(features_data, features_length, &features_signal);
     if (err != 0) {
-        LOGE("Error creando la señal: %d", err);
-        env->ReleaseFloatArrayElements(features, features_array, 0);
-        return env->NewStringUTF("ERROR_SIGNAL");
+        env->ReleaseFloatArrayElements(features, features_data, JNI_ABORT);
+        return env->NewStringUTF("ERROR: Fallo al crear la señal");
     }
 
     ei_impulse_result_t result = { 0 };
-    err = run_classifier(&signal, &result, false);
+    EI_IMPULSE_ERROR res = run_classifier(&features_signal, &result, false);
 
-    env->ReleaseFloatArrayElements(features, features_array, 0);
+    env->ReleaseFloatArrayElements(features, features_data, JNI_ABORT);
 
-    if (err != EI_IMPULSE_OK) {
-        LOGE("Error en la inferencia: %d", err);
-        return env->NewStringUTF("ERROR_INFERENCE");
+    if (res != 0) {
+        return env->NewStringUTF("ERROR: Fallo en el clasificador");
     }
 
-    // Buscar la clase con mayor probabilidad
-    float max_value = 0.0;
-    std::string max_label = "";
-
+    // Encuentra la clase con mayor probabilidad
+    float max_value = 0.0f;
+    int max_index = -1;
     for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-        LOGI("Clase: %s, Valor: %.5f", result.classification[ix].label, result.classification[ix].value);
         if (result.classification[ix].value > max_value) {
             max_value = result.classification[ix].value;
-            max_label = result.classification[ix].label;
+            max_index = ix;
         }
     }
 
-    // Retornar la clase dominante y su probabilidad separadas por un pipe (|)
-    std::string final_result = max_label + "|" + std::to_string(max_value);
-    return env->NewStringUTF(final_result.c_str());
+    std::string result_str = "";
+    if (max_index >= 0) {
+        result_str = std::string(result.classification[max_index].label) + "|" + std::to_string(max_value);
+    } else {
+        result_str = "ERROR|0.0";
+    }
+
+    return env->NewStringUTF(result_str.c_str());
 }

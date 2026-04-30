@@ -29,35 +29,4 @@
  * permissions, disclaimers and limitations under the License.
  */
 
-#ifndef _EI_CLASSIFIER_TFLITE_LEARN_939873_3_H_
-#define _EI_CLASSIFIER_TFLITE_LEARN_939873_3_H_
-
-// NOTE: As of February 2025 we've changed the default way to include binary model files.
-// Instead of embedding the file as as a byte array in this file, we now use INCBIN instead;
-// as it yields much shorter link times, and lower memory usage when building applications.
-// If this causes issues to your builds (maybe the reason why you're visiting this file)
-// you can go to **Dashboard > Experiments > Use xxd instead of INCBIN to link TFLite/ONNX files**
-// to re-enable the previous behavior. Please also let us know at the forum (https://forum.edgeimpulse.com/)
-// or through your Solutions Engineers (if applicable) what target you're building for, and what
-// issues arise.
-
-#define INCBIN_STYLE INCBIN_STYLE_SNAKE
-
-#if defined(EI_MODEL_SECTION)
-#define STRINGIZE(x) #x
-#define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
-#define INCBIN_OUTPUT_SECTION STRINGIZE_VALUE_OF(EI_MODEL_SECTION)
-#endif
-
-#include "edge-impulse-sdk/third_party/incbin/incbin.h"
-
-#define EI_CLASSIFIER_TFLITE_LEARN_939873_3_ARENA_SIZE     3270
-const size_t tflite_learn_939873_3_arena_size = 3270;
-
-INCBIN(incbin_tflite_learn_939873_3, "tflite-model/tflite_learn_939873_3.tflite");
-
-const unsigned char *tflite_learn_939873_3 = gincbin_tflite_learn_939873_3_data;
-unsigned int tflite_learn_939873_3_len = gincbin_tflite_learn_939873_3_size;
-
-#endif // _EI_CLASSIFIER_TFLITE_LEARN_939873_3_H_
-
+// Empty on purpose

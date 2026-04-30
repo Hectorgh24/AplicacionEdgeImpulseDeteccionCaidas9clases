@@ -8,10 +8,9 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.net.Uri
 import android.os.Bundle
-import android.os.CountDownTimer
-import android.telephony.SmsManager
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.widget.Button
 import android.widget.EditText
@@ -20,6 +19,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
@@ -33,19 +33,47 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvPrediction: TextView
 
     // Configuración de Edge Impulse
-    private val bufferSize = 300 // Cambiar por el valor exacto de EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE de tu modelo
+    private val bufferSize = 300 // EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE (100 samples * 3 axes)
     private val featuresBuffer = FloatArray(bufferSize)
     private var bufferIndex = 0
 
-    // Temporizador de 5 segundos
-    private var fallTimer: CountDownTimer? = null
-    private var isTimerRunning = false
     private val FALL_THRESHOLD = 0.85f // Umbral de confianza
-    private val FALL_CLASSES = listOf("caida_adelante", "caida_atras", "caida_lateral") // Ajustar a los nombres exactos de tus clases de caída
+    private var isAlertActive = false
+    
+    // Clases que representan caídas
+    private val FALL_CLASSES = listOf(
+        "fall_backward",
+        "fall_bending",
+        "fall_forward",
+        "fall_hand",
+        "fall_sideward_left",
+        "fall_sideward_right",
+        "fall_sitting",
+        "fall_syncope"
+    )
+
+    // Diccionario de traducciones para la interfaz de usuario
+    private val labelDisplayNames = mapOf(
+        "fall_backward"       to "Caída hacia atrás",
+        "fall_bending"        to "Caída agachándose",
+        "fall_forward"        to "Caída hacia adelante",
+        "fall_hand"           to "Caída de manos",
+        "fall_sideward_left"  to "Caída lateral izquierda",
+        "fall_sideward_right" to "Caída lateral derecha",
+        "fall_sitting"        to "Caída sentado",
+        "fall_syncope"        to "Síncope / Desmayo",
+        "walk"                to "Caminando",
+        "stand"               to "De pie",
+        "sit"                 to "Sentado",
+        "idle"                to "Sin movimiento",
+        "normal"              to "Normal",
+        "running"             to "Corriendo"
+    )
 
     companion object {
         private const val TAG = "EdgeImpulseAppLogs"
         private const val PERMISSION_REQUEST_CODE = 101
+        private const val REQUEST_CODE_ALERT = 102
 
         init {
             System.loadLibrary("aplicacionedgeimpulse")
@@ -66,12 +94,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
+        // Validación de 10 dígitos y solo números
+        etPhone.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (s != null && s.length > 10) {
+                    s.delete(10, s.length) // Restringir a 10 dígitos
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
         checkPermissions()
 
         btnToggleMonitor.setOnClickListener {
             val phone = etPhone.text.toString()
-            if (phone.isEmpty()) {
-                Toast.makeText(this, "Ingresa un número válido", Toast.LENGTH_SHORT).show()
+            if (phone.length != 10) {
+                Toast.makeText(this, "Ingresa un número válido de 10 dígitos", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -100,6 +139,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         accelerometer?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
             isMonitoring = true
+            isAlertActive = false
             btnToggleMonitor.text = "Detener Monitoreo"
             tvStatus.text = "Monitoreando..."
             bufferIndex = 0
@@ -112,15 +152,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         isMonitoring = false
         btnToggleMonitor.text = "Iniciar Monitoreo"
         tvStatus.text = "Detenido"
-        cancelFallTimer()
         logInfo("Monitoreo detenido.")
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null || !isMonitoring) return
+        if (event == null || !isMonitoring || isAlertActive) return
 
         if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
-            // Edge Impulse generalmente usa m/s^2. Asegúrate de que las unidades coincidan con tus datos de entrenamiento.
             featuresBuffer[bufferIndex++] = event.values[0]
             featuresBuffer[bufferIndex++] = event.values[1]
             featuresBuffer[bufferIndex++] = event.values[2]
@@ -144,89 +182,46 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         val parts = resultString.split("|")
         if (parts.size == 2) {
-            val label = parts[0]
-            val confidence = parts[1].toFloatOrNull() ?: 0f
+            // Limpieza como estaba en la versión de 9 clases original
+            val label = parts[0].replace("\u0000", "").trim()
+            val confidenceStr = parts[1].replace("\u0000", "").trim().replace(",", ".")
+            val confidence = confidenceStr.toFloatOrNull() ?: 0f
+
+            val percentage = (confidence * 100).roundToInt()
+            val translatedLabel = labelDisplayNames[label] ?: label
 
             runOnUiThread {
-                tvPrediction.text = "Predicción: $label (${String.format("%.2f", confidence)})"
+                tvPrediction.text = "Predicción: $translatedLabel ($percentage%)"
             }
 
-            logInfo("Inferencia completada: $label ($confidence)")
+            logInfo("Inferencia completada: $label ($percentage%)")
 
             if (FALL_CLASSES.contains(label) && confidence >= FALL_THRESHOLD) {
-                if (!isTimerRunning) {
-                    logInfo("Posible caída detectada ($label). Iniciando temporizador de 5 segundos.")
-                    startFallTimer(label)
-                }
-            } else {
-                // Opcional: Cancelar el temporizador si se detecta una clase de recuperación o movimiento normal de alta confianza
-                // if (label == "recuperacion" && confidence > 0.9f) cancelFallTimer()
+                logInfo("Posible caída detectada ($label). Lanzando AlertActivity.")
+                startFallAlert(translatedLabel)
             }
         }
     }
 
-    private fun startFallTimer(fallType: String) {
-        isTimerRunning = true
-        runOnUiThread { tvStatus.text = "¡Alerta! Caída: $fallType en 5s..." }
+    private fun startFallAlert(fallType: String) {
+        isAlertActive = true
+        val phone = etPhone.text.toString().trim()
+        
+        val intent = Intent(this, AlertActivity::class.java).apply {
+            putExtra(AlertActivity.EXTRA_PHONE, phone)
+            putExtra(AlertActivity.EXTRA_FALL_TYPE, fallType)
+        }
+        startActivityForResult(intent, REQUEST_CODE_ALERT)
+    }
 
-        fallTimer = object : CountDownTimer(5000, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                val sec = millisUntilFinished / 1000
-                logInfo("Temporizador de caída: ${sec}s restantes.")
-                runOnUiThread { tvStatus.text = "¡Alerta en ${sec}s!" }
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_ALERT) {
+            isAlertActive = false
+            bufferIndex = 0
+            if (isMonitoring) {
+                tvStatus.text = "Monitoreando..."
             }
-
-            override fun onFinish() {
-                isTimerRunning = false
-                logInfo("Temporizador finalizado. Ejecutando protocolo de emergencia.")
-                runOnUiThread { tvStatus.text = "Enviando alerta..." }
-                executeEmergencyProtocol(fallType)
-            }
-        }.start()
-    }
-
-    private fun cancelFallTimer() {
-        fallTimer?.cancel()
-        isTimerRunning = false
-        runOnUiThread { if (isMonitoring) tvStatus.text = "Monitoreando..." }
-        logInfo("Temporizador de caída cancelado.")
-    }
-
-    private fun executeEmergencyProtocol(fallType: String) {
-        val phoneNumber = etPhone.text.toString()
-        if (phoneNumber.isNotEmpty()) {
-            sendSMS(phoneNumber, "Alerta de Emergencia: Se ha detectado una caída del tipo '$fallType'.")
-            makeCall(phoneNumber)
-        } else {
-            logError("Número de teléfono no configurado para alerta.")
-        }
-        // Reiniciar estado
-        if(isMonitoring) {
-            runOnUiThread { tvStatus.text = "Monitoreando..." }
-        }
-    }
-
-    private fun sendSMS(phoneNumber: String, message: String) {
-        try {
-            val smsManager = SmsManager.getDefault()
-            smsManager.sendTextMessage(phoneNumber, null, message, null, null)
-            logInfo("SMS enviado a $phoneNumber")
-            Toast.makeText(this, "SMS enviado", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            logError("Error al enviar SMS: ${e.message}")
-        }
-    }
-
-    private fun makeCall(phoneNumber: String) {
-        try {
-            val intent = Intent(Intent.ACTION_CALL)
-            intent.data = Uri.parse("tel:$phoneNumber")
-            startActivity(intent)
-            logInfo("Llamada iniciada a $phoneNumber")
-        } catch (e: SecurityException) {
-            logError("Permiso denegado para realizar llamada.")
-        } catch (e: Exception) {
-            logError("Error al realizar llamada: ${e.message}")
         }
     }
 

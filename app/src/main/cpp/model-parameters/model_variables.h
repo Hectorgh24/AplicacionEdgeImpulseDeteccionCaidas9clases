@@ -43,6 +43,7 @@
 #include "model_metadata.h"
 #include "anomaly_metadata.h"
 #include "tflite-model/tflite_learn_939873_3.h"
+#include "tflite-model/tflite_anomaly_939873_6.h"
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "edge-impulse-sdk/classifier/inferencing_engines/engines.h"
 #include "edge-impulse-sdk/classifier/postprocessing/ei_postprocessing_common.h"
@@ -72,6 +73,26 @@ ei_dsp_config_spectral_analysis_t ei_dsp_config_939873_2 = {
     false // boolean extra-low-freq
 };
 
+const float ei_dn_standard_scaler_mean_939873_2[18] = { 4.399408935043547, 0.06574135956254273, -0.8335678606440396, 2.272770159390237, 3.4495615348881756, 2.058546432389153, 4.418212978177601, 0.06590566280192965, -0.8527145518604327, 2.2769658624198703, 3.4645262518251676, 2.055558063494939, 4.405690433898456, 0.06761735259246897, -0.8415357719242406, 2.2751053152879077, 3.457651462601377, 2.05422059976006 };
+const float ei_dn_standard_scaler_scale_939873_2[18] = { 1.0973062994851825, 1.999305841992508, 1.204149219110337, 5.41753149628539, 1.4842984864703963, 3.867558485383729, 1.0988591146168027, 2.0233895269428595, 1.2138080996562548, 5.499719171517554, 1.5079201530756734, 3.8639478719160483, 1.1010962388876906, 2.0120503246024795, 1.202139524044986, 5.415597643194194, 1.4830070552860362, 3.887816648311058 };
+const float ei_dn_standard_scaler_var_939873_2[18] = { 0.8305088317006516, 0.2501736298915777, 0.6896669006113194, 0.03407195945194039, 0.4538972074381464, 0.06685381886119976, 0.8281632799046592, 0.24425361747826735, 0.6787345199188999, 0.033061227347767966, 0.4397879330524426, 0.06697881851720934, 0.8248014991336761, 0.24701442869152562, 0.6919747503896756, 0.03409629727494507, 0.45468807654860555, 0.06615892649699362 };
+ei_data_normalization_standard_scaler_config_t ei_data_normalization_standard_scaler_config_939873_2 = {
+    .mean_data = (float *)ei_dn_standard_scaler_mean_939873_2,
+    .mean_data_len = 18,
+    .scale_data = (float *)ei_dn_standard_scaler_scale_939873_2,
+    .scale_data_len = 18,
+    .var_data = (float *)ei_dn_standard_scaler_var_939873_2,
+    .var_data_len = 18
+};
+ei_data_normalization_t ei_data_normalization_config_939873_2 = {
+    (void *) &ei_data_normalization_standard_scaler_config_939873_2, // config
+    DATA_NORMALIZATION_METHOD_STANDARD_SCALER, // method
+    nullptr, // context
+    nullptr, // init func
+    nullptr, // deinit func
+    &data_normalization_standard_scaler // exec func
+};
+
 const uint8_t ei_dsp_blocks_939873_1_size = 1;
 ei_model_dsp_t ei_dsp_blocks_939873_1[ei_dsp_blocks_939873_1_size] = {
     { // DSP block 2
@@ -83,7 +104,7 @@ ei_model_dsp_t ei_dsp_blocks_939873_1[ei_dsp_blocks_939873_1_size] = {
         ei_dsp_config_939873_2_axes_size, // number of axes
         1, // version
         nullptr, // factory function
-        nullptr, // data normalization config
+        &ei_data_normalization_config_939873_2, // data normalization config
     }
 };
 const ei_config_tflite_graph_t ei_config_graph_939873_3 = {
@@ -93,6 +114,13 @@ const ei_config_tflite_graph_t ei_config_graph_939873_3 = {
     .arena_size = tflite_learn_939873_3_arena_size
 };
 
+const ei_config_tflite_graph_t ei_config_graph_939873_6 = {
+    .implementation_version = 1,
+    .model = tflite_anomaly_939873_6,
+    .model_size = tflite_anomaly_939873_6_len,
+    .arena_size = tflite_anomaly_939873_6_arena_size
+};
+
 const uint8_t ei_output_tensors_indices_939873_3[1] = { 0 };
 const uint8_t ei_output_tensors_size_939873_3 = 1;
 ei_learning_block_config_tflite_graph_t ei_learning_block_config_939873_3 = {
@@ -100,28 +128,25 @@ ei_learning_block_config_tflite_graph_t ei_learning_block_config_939873_3 = {
     .block_id = 3,
     .output_tensors_indices = ei_output_tensors_indices_939873_3,
     .output_tensors_size = ei_output_tensors_size_939873_3,
-    .quantized = 1,
+    .quantized = 0,
     .compiled = 0,
     .graph_config = (void*)&ei_config_graph_939873_3,
     .dequantize_output = 0,
 };
 
-const ei_learning_block_config_anomaly_kmeans_t ei_learning_block_config_939873_4 = {
+ei_learning_block_config_anomaly_gmm_t ei_learning_block_config_939873_6 = {
     .implementation_version = 1,
-    .block_id = 4,
-    .anom_axis = ei_classifier_anom_axes_939873_4,
+    .block_id = 6,
+    .anom_axis = ei_classifier_anom_axes_939873_6,
     .anom_axes_size = 3,
-    .anom_clusters = ei_classifier_anom_clusters_939873_4,
-    .anom_cluster_count = 32,
-    .anom_scale = ei_classifier_anom_scale_939873_4,
-    .anom_mean = ei_classifier_anom_mean_939873_4,
+    .graph_config = (void*)&ei_config_graph_939873_6
 };
 
 const uint8_t ei_learning_blocks_939873_1_size = 2;
 const uint32_t ei_learning_block_939873_3_inputs[1] = { 2 };
 const uint8_t ei_learning_block_939873_3_inputs_size = 1;
-const uint32_t ei_learning_block_939873_4_inputs[1] = { 2 };
-const uint8_t ei_learning_block_939873_4_inputs_size = 1;
+const uint32_t ei_learning_block_939873_6_inputs[1] = { 2 };
+const uint8_t ei_learning_block_939873_6_inputs_size = 1;
 const ei_learning_block_t ei_learning_blocks_939873_1[ei_learning_blocks_939873_1_size] = {
     {
         3,
@@ -132,31 +157,36 @@ const ei_learning_block_t ei_learning_blocks_939873_1[ei_learning_blocks_939873_
         ei_learning_block_939873_3_inputs_size,
     },
     {
-        4,
-        &run_kmeans_anomaly,
-        (void*)&ei_learning_block_config_939873_4,
+        6,
+        &run_gmm_anomaly,
+        (void*)&ei_learning_block_config_939873_6,
         EI_CLASSIFIER_IMAGE_SCALING_NONE,
-        ei_learning_block_939873_4_inputs,
-        ei_learning_block_939873_4_inputs_size,
+        ei_learning_block_939873_6_inputs,
+        ei_learning_block_939873_6_inputs_size,
     },
 };
 
-ei_fill_result_classification_i8_config_t ei_fill_result_classification_i8_config_939873_3 = {
-    .zero_point = -128,
-    .scale = 0.00390625
-};
-
-const size_t ei_postprocessing_blocks_939873_1_size = 1;
+const size_t ei_postprocessing_blocks_939873_1_size = 2;
 const ei_postprocessing_block_t ei_postprocessing_blocks_939873_1[ei_postprocessing_blocks_939873_1_size] = {
     {
         .block_id = 3,
         .type = EI_CLASSIFIER_MODE_CLASSIFICATION,
         .init_fn = NULL,
         .deinit_fn = NULL,
-        .postprocess_fn = &process_classification_i8,
+        .postprocess_fn = &process_classification_f32,
         .display_fn = NULL,
-        .config = (void*)&ei_fill_result_classification_i8_config_939873_3,
+        .config = NULL,
         .input_block_id = 3
+    },
+    {
+        .block_id = 6,
+        .type = EI_CLASSIFIER_MODE_ANOMALY_GMM,
+        .init_fn = NULL,
+        .deinit_fn = NULL,
+        .postprocess_fn = &process_anomaly,
+        .display_fn = NULL,
+        .config = NULL,
+        .input_block_id = 6
     },
 };
 
@@ -170,7 +200,7 @@ const ei_impulse_t impulse_939873_1 = {
     .project_name = "Deteccion-caidas-9-clases",
     .impulse_id = 1,
     .impulse_name = "Impulse #1",
-    .deploy_version = 1,
+    .deploy_version = 2,
 
     .nn_input_frame_size = 18,
     .raw_sample_count = 100,
@@ -191,7 +221,7 @@ const ei_impulse_t impulse_939873_1 = {
     .postprocessing_blocks_size = ei_postprocessing_blocks_939873_1_size,
     .postprocessing_blocks = ei_postprocessing_blocks_939873_1,
 
-    .output_tensors_size = 1,
+    .output_tensors_size = 2,
 
     .inferencing_engine = EI_CLASSIFIER_TFLITE,
 
@@ -200,7 +230,7 @@ const ei_impulse_t impulse_939873_1 = {
     .slice_size = (100/4),
     .slices_per_model_window = 4,
 
-    .has_anomaly = EI_ANOMALY_TYPE_KMEANS,
+    .has_anomaly = EI_ANOMALY_TYPE_GMM,
     .label_count = 9,
     .categories = ei_classifier_inferencing_categories_939873_1,
     .results_type = EI_CLASSIFIER_TYPE_CLASSIFICATION,

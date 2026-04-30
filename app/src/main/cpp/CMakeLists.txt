@@ -1,43 +1,51 @@
-cmake_minimum_required(VERSION 3.22.1)
+cmake_minimum_required(VERSION 3.4.1)
+
 project("aplicacionedgeimpulse")
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 include_directories(
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk
-        ${CMAKE_CURRENT_SOURCE_DIR}/model-parameters
-        ${CMAKE_CURRENT_SOURCE_DIR}/tflite-model
+    .
+    edge-impulse-sdk
+    model-parameters
+    tflite-model
 )
 
-# Se agrega la extensión .cc y el directorio CMSIS
-file(GLOB_RECURSE EI_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/classifier/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/dsp/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/dsp/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/tensorflow/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/tensorflow/*.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/tensorflow/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/CMSIS/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/CMSIS/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/porting/posix/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/porting/posix/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/edge-impulse-sdk/porting/posix/*.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tflite-model/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tflite-model/*.c"
+file(GLOB_RECURSE ei_cpp_sources
+    edge-impulse-sdk/dsp/kissfft/*.cpp
+    edge-impulse-sdk/dsp/dct/*.cpp
+    edge-impulse-sdk/dsp/memory.cpp
+    edge-impulse-sdk/porting/android/*.cpp
+    edge-impulse-sdk/porting/android/*.c
+    tflite-model/*.cpp
+    tflite-model/*.c
+    edge-impulse-sdk/classifier/*.cpp
+    edge-impulse-sdk/classifier/*.c
+    edge-impulse-sdk/tensorflow/*.cpp
+    edge-impulse-sdk/tensorflow/*.cc
+    edge-impulse-sdk/tensorflow/*.c
+    edge-impulse-sdk/third_party/*.cpp
+    edge-impulse-sdk/third_party/*.cc
+    edge-impulse-sdk/third_party/*.c
 )
 
 add_library(
-        ${CMAKE_PROJECT_NAME}
+        aplicacionedgeimpulse
         SHARED
         native-lib.cpp
-        ${EI_SOURCES}
+        ${ei_cpp_sources}
 )
 
-find_library(log-lib log)
+target_compile_definitions(aplicacionedgeimpulse PRIVATE
+    EI_PORTING_ANDROID=1
+    EIDSP_USE_CMSIS_DSP=0
+    EIDSP_LOAD_CMSIS_DSP_SOURCES=0
+)
+
+find_library(
+        log-lib
+        log
+)
 
 target_link_libraries(
-        ${CMAKE_PROJECT_NAME}
+        aplicacionedgeimpulse
         ${log-lib}
 )
