@@ -38,11 +38,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var bufferIndex = 0
 
     private val FALL_THRESHOLD = 0.90f // Umbral de confianza más estricto
-    private val REQUIRED_CONSECUTIVE_FALL_WINDOWS = 2 // Confirmar en ventanas consecutivas
-    private val ALERT_COOLDOWN_MS = 3000L // Evita múltiples alertas por el mismo evento
+    private val REQUIRED_CONSECUTIVE_FALL_WINDOWS = 3 // Confirmar en ventanas consecutivas
+    private val ALERT_COOLDOWN_MS = 30_000L // 30s de cooldown para evitar re-alertas post-caída
+    private val POST_ALERT_DISCARD_WINDOWS = 2 // Descartar primeras ventanas post-alerta (estabilización)
     private var isAlertActive = false
     private var consecutiveFallDetections = 0
     private var lastAlertTimestamp = 0L
+    private var discardWindowsRemaining = 0
     
     // Clases que representan caídas
     private val FALL_CLASSES = listOf(
@@ -94,6 +96,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnToggleMonitor = findViewById(R.id.btnToggleMonitor)
         tvStatus = findViewById(R.id.tvStatus)
         tvPrediction = findViewById(R.id.tvPrediction)
+
+        // Establecer prefijo con bandera de México programáticamente
+        try {
+            findViewById<TextView>(R.id.tvCountryPrefix)?.text = "\uD83C\uDDF2\uD83C\uDDFD +52 "
+        } catch (e: Exception) {
+            // Fallback: el texto "+52 " ya está en el XML
+        }
 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -181,6 +190,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun performInference() {
+        // Descartar ventanas de estabilización post-alerta
+        if (discardWindowsRemaining > 0) {
+            discardWindowsRemaining--
+            logInfo("Ventana descartada (estabilización post-alerta). Restantes: $discardWindowsRemaining")
+            return
+        }
+
         val resultString = runClassification(featuresBuffer)
 
         if (resultString.startsWith("ERROR")) {
@@ -252,6 +268,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             isAlertActive = false
             bufferIndex = 0
             consecutiveFallDetections = 0
+            featuresBuffer.fill(0f) // Limpiar datos residuales de la caída
+            discardWindowsRemaining = POST_ALERT_DISCARD_WINDOWS // Estabilización
+            lastAlertTimestamp = System.currentTimeMillis() // Reiniciar cooldown desde AHORA
             if (isMonitoring) {
                 tvStatus.text = "Monitoreando..."
             }

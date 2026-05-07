@@ -2,20 +2,25 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
     android:gravity="center_vertical"
     android:orientation="vertical"
     android:padding="24dp">
 
     <LinearLayout
+        android:id="@+id/phoneRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <TextView
+            android:id="@+id/tvCountryPrefix"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="+52 "
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="20sp"
             android:textStyle="bold" />
 
@@ -27,7 +32,9 @@
             android:hint="Número a 10 dígitos"
             android:inputType="phone"
             android:maxLength="10"
-            android:minHeight="48dp" />
+            android:minHeight="48dp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textColorHint="?android:attr/textColorSecondary" />
     </LinearLayout>
 
     <Button
@@ -44,6 +51,7 @@
         android:layout_marginTop="32dp"
         android:text="Estado: Detenido"
         android:textAlignment="center"
+        android:textColor="?android:attr/textColorPrimary"
         android:textSize="20sp"
         android:textStyle="bold" />
 
@@ -54,6 +62,7 @@
         android:layout_marginTop="16dp"
         android:text="Predicción: -"
         android:textAlignment="center"
+        android:textColor="?android:attr/textColorPrimary"
         android:textSize="18sp" />
 
 </LinearLayout>

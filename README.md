@@ -65,7 +65,7 @@ Si aparece un error de C++ al linkear simbolos de TensorFlow Lite Micro, revisar
 1. Ingresar un numero telefonico de 10 digitos.
 2. Presionar "Iniciar Monitoreo".
 3. La app mostrara la prediccion y porcentaje de confianza.
-4. Si detecta una caida (con confianza >= 0.85), abre la pantalla de alerta.
+4. Si detecta una caida (con confianza >= 0.90 en 3 ventanas consecutivas), abre la pantalla de alerta.
 5. Si no se cancela en 5 segundos, ejecuta el protocolo de emergencia.
 
 ## Permisos utilizados
@@ -74,6 +74,26 @@ Si aparece un error de C++ al linkear simbolos de TensorFlow Lite Micro, revisar
 - `android.permission.CALL_PHONE`
 
 Nota: para SMS y llamada, el usuario debe conceder permisos en tiempo de ejecucion.
+
+## Mejoras recientes
+
+### Interfaz principal
+- Se corrigió el posicionamiento vertical del contenido. Con `targetSdk 36` (Android 15+), el sistema fuerza modo edge-to-edge y el contenido se dibujaba detrás del ActionBar. Se agregó `fitsSystemWindows="true"` a los layouts.
+- Se agregó el emoji de la bandera de México (🇲🇽) antes del prefijo `+52` para indicar que solo se aceptan números mexicanos. El emoji se establece programáticamente en Kotlin para evitar problemas de codificación Unicode en XML.
+- Se agregaron colores de texto explícitos (`?android:attr/textColorPrimary`) para garantizar visibilidad en modo oscuro.
+
+### Pantalla de ajustes
+- Se reemplazó `@android:drawable/dialog_holo_light_frame` (siempre blanco) por `MaterialCardView`, que adapta automáticamente su fondo al tema claro u oscuro.
+- Se eliminó `fillViewport="true"` que causaba que el contenido se solapara con el ActionBar en modo edge-to-edge.
+- Se agregó `supportActionBar?.title = "Ajustes"` para mostrar un título descriptivo en la toolbar.
+
+### Corrección de falsas detecciones consecutivas post-caída
+Después de una caída real detectada correctamente, la app disparaba alertas consecutivas incluso estando inmóvil. Se identificaron y corrigieron las siguientes causas:
+- **Cooldown insuficiente**: se aumentó de 3 segundos a 30 segundos para dar tiempo de recuperación.
+- **Ventanas consecutivas**: se aumentó de 2 a 3 ventanas consecutivas con confianza >= 90% para confirmar una caída.
+- **Buffer contaminado**: al volver de la AlertActivity, el buffer del acelerómetro conservaba datos residuales de la caída. Ahora se limpia con `featuresBuffer.fill(0f)`.
+- **Estabilización post-alerta**: se descartan las primeras 2 ventanas de inferencia después de cancelar o completar una alerta, para que el sensor se estabilice.
+- **Timestamp de cooldown**: ahora se reinicia desde el momento en que el usuario vuelve a MainActivity, no desde cuando se detectó la caída original.
 
 ## Limitaciones actuales
 - El numero telefonico se maneja en formato de 10 digitos (logica orientada a Mexico).

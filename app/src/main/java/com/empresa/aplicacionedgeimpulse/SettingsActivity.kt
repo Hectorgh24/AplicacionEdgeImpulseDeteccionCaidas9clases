@@ -33,6 +33,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        supportActionBar?.title = "Ajustes"
 
         tvSessionStart = findViewById(R.id.tvSessionStart)
         tvDuration = findViewById(R.id.tvDuration)
