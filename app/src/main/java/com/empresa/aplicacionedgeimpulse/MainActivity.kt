@@ -37,8 +37,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val featuresBuffer = FloatArray(bufferSize)
     private var bufferIndex = 0
 
-    private val FALL_THRESHOLD = 0.90f // Umbral de confianza más estricto
-    private val REQUIRED_CONSECUTIVE_FALL_WINDOWS = 3 // Confirmar en ventanas consecutivas
+    private val FALL_THRESHOLD = 0.75f // Umbral de confianza ajustado
+    private val REQUIRED_CONSECUTIVE_FALL_WINDOWS = 1 // Confirmar en menos ventanas
     private val ALERT_COOLDOWN_MS = 30_000L // 30s de cooldown para evitar re-alertas post-caída
     private val POST_ALERT_DISCARD_WINDOWS = 2 // Descartar primeras ventanas post-alerta (estabilización)
     private var isAlertActive = false
@@ -68,12 +68,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         "fall_sideward_right" to "Caída lateral derecha",
         "fall_sitting"        to "Caída sentado",
         "fall_syncope"        to "Síncope / Desmayo",
-        "walk"                to "Caminando",
-        "stand"               to "De pie",
-        "sit"                 to "Sentado",
-        "idle"                to "Sin movimiento",
-        "normal"              to "Normal",
-        "running"             to "Corriendo"
+        "walk"                to "Caminando"
     )
 
     companion object {
@@ -180,6 +175,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             featuresBuffer[bufferIndex++] = event.values[1]
             featuresBuffer[bufferIndex++] = event.values[2]
 
+            MonitoringLogManager.recordSensorData(event.values[0], event.values[1], event.values[2])
+
             if (bufferIndex >= bufferSize) {
                 bufferIndex = 0
                 performInference()
@@ -220,7 +217,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
 
             logInfo("Inferencia completada: $label ($percentage%)")
-            MonitoringLogManager.updatePrediction(this, predictionText)
+            MonitoringLogManager.updatePrediction(this, predictionText, label)
             MonitoringLogManager.recordWindow(this)
 
             if (isValidFallDetection(label, confidence)) {

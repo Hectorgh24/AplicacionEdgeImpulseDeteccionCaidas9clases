@@ -1,7 +1,7 @@
 package com.empresa.aplicacionedgeimpulse
 
-import android.content.Context
 import android.content.ContentValues
+import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -11,6 +11,19 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
+
+data class PredictionEvent(
+    val timeSeconds: Int,
+    val className: String
+)
+
+data class SensorEventData(
+    val timeOffsetMillis: Long,
+    val x: Float,
+    val y: Float,
+    val z: Float
+)
 
 data class MonitoringSessionLog(
     val sessionStartMillis: Long,
@@ -19,7 +32,9 @@ data class MonitoringSessionLog(
     val fallCount: Int = 0,
     val alertsTriggered: Int = 0,
     val emergencyNumber: String = "",
-    val currentPrediction: String = "Inactivo"
+    val currentPrediction: String = "Inactivo",
+    val predictionHistory: MutableList<PredictionEvent> = mutableListOf(),
+    @Transient val sensorHistory: MutableList<SensorEventData> = mutableListOf()
 ) {
     val durationSeconds: Long
         get() = if (sessionEndMillis != null) {
@@ -40,6 +55,15 @@ data class MonitoringSessionLog(
             put("alertsTriggered", alertsTriggered)
             put("emergencyNumber", emergencyNumber)
             put("currentPrediction", currentPrediction)
+            
+            val historyArray = JSONArray()
+            predictionHistory.forEach { event ->
+                val eventObj = JSONObject()
+                eventObj.put("timeSeconds", event.timeSeconds)
+                eventObj.put("className", event.className)
+                historyArray.put(eventObj)
+            }
+            put("predictionHistory", historyArray)
         }
     }
 
@@ -78,8 +102,20 @@ object MonitoringLogManager {
         }
     }
 
-    fun updatePrediction(context: Context, prediction: String) {
+    fun recordSensorData(x: Float, y: Float, z: Float) {
         currentSession?.let {
+            val offset = System.currentTimeMillis() - it.sessionStartMillis
+            it.sensorHistory.add(SensorEventData(offset, x, y, z))
+            // Limit to last 500 points (approx 10 seconds at 50Hz) to save memory
+            if (it.sensorHistory.size > 500) {
+                it.sensorHistory.removeAt(0)
+            }
+        }
+    }
+
+    fun updatePrediction(context: Context, prediction: String, className: String) {
+        currentSession?.let {
+            it.predictionHistory.add(PredictionEvent(it.durationSeconds.toInt(), className))
             currentSession = it.copy(currentPrediction = prediction)
             saveCurrentSession(context)
         }
@@ -113,7 +149,18 @@ object MonitoringLogManager {
                 fallCount = json.optInt("fallCount"),
                 alertsTriggered = json.optInt("alertsTriggered"),
                 emergencyNumber = json.optString("emergencyNumber"),
-                currentPrediction = json.optString("currentPrediction", "Inactivo")
+                currentPrediction = json.optString("currentPrediction", "Inactivo"),
+                predictionHistory = mutableListOf<PredictionEvent>().apply {
+                    val arr = json.optJSONArray("predictionHistory")
+                    if (arr != null) {
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.optJSONObject(i)
+                            if (obj != null) {
+                                add(PredictionEvent(obj.optInt("timeSeconds"), obj.optString("className")))
+                            }
+                        }
+                    }
+                }
             )
         } catch (_: Exception) {
             null
