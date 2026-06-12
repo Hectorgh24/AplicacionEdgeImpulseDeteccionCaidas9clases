@@ -33,6 +33,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvAlerts: TextView
     private lateinit var tvEmergencyNumber: TextView
     private lateinit var tvPrediction: TextView
+    private lateinit var tvRemainingTime: TextView
     private lateinit var btnExportReport: Button
     private lateinit var timelineChart: ScatterChart
     private lateinit var sensorChart: LineChart
@@ -59,14 +60,13 @@ class SettingsActivity : AppCompatActivity() {
     private val refreshTask = object : Runnable {
         override fun run() {
             renderSession()
-            refreshHandler.postDelayed(this, 1000L)
+            refreshHandler.postDelayed(this, 2000L) // Refrescar cada 2 segundos para no saturar el main thread
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
-        supportActionBar?.title = "Ajustes"
 
         tvSessionStart = findViewById(R.id.tvSessionStart)
         tvDuration = findViewById(R.id.tvDuration)
@@ -75,6 +75,7 @@ class SettingsActivity : AppCompatActivity() {
         tvAlerts = findViewById(R.id.tvAlerts)
         tvEmergencyNumber = findViewById(R.id.tvEmergencyNumber)
         tvPrediction = findViewById(R.id.tvPredictionLog)
+        tvRemainingTime = findViewById(R.id.tvRemainingTime)
         btnExportReport = findViewById(R.id.btnExportReport)
         timelineChart = findViewById(R.id.timelineChart)
         sensorChart = findViewById(R.id.sensorChart)
@@ -115,11 +116,22 @@ class SettingsActivity : AppCompatActivity() {
         sensorChart.isDragEnabled = true
         sensorChart.setScaleEnabled(true)
         sensorChart.setPinchZoom(true)
+
+        // Desactivar hardware acceleration en el chart para reducir presión de GPU/memoria
+        sensorChart.setHardwareAccelerationEnabled(false)
         
         val xAxis = sensorChart.xAxis
         xAxis.position = XAxis.XAxisPosition.BOTTOM
         xAxis.setDrawGridLines(true)
+        xAxis.isGranularityEnabled = true
+        xAxis.granularity = 1f
+        xAxis.setLabelCount(11, false) // Force labels every second for 10s window
         xAxis.textColor = textColorPrimary
+        xAxis.valueFormatter = object : ValueFormatter() {
+            override fun getFormattedValue(value: Float): String {
+                return "${value.toInt()}s"
+            }
+        }
         
         val yAxis = sensorChart.axisLeft
         yAxis.setDrawGridLines(true)
@@ -136,19 +148,29 @@ class SettingsActivity : AppCompatActivity() {
         timelineChart.description.isEnabled = false
         timelineChart.legend.isEnabled = false
         timelineChart.axisRight.isEnabled = false
-        timelineChart.extraLeftOffset = 65f // Reduced to save white space
+        timelineChart.extraLeftOffset = 65f
         timelineChart.extraBottomOffset = 10f
         
         // Enable scrolling and zooming
         timelineChart.isDragEnabled = true
         timelineChart.setScaleEnabled(true)
         timelineChart.setPinchZoom(true)
+
+        // Desactivar hardware acceleration para reducir presión de memoria
+        timelineChart.setHardwareAccelerationEnabled(false)
         
         val xAxis = timelineChart.xAxis
         xAxis.position = XAxis.XAxisPosition.BOTTOM
         xAxis.setDrawGridLines(true)
+        xAxis.isGranularityEnabled = true
         xAxis.granularity = 1f
+        xAxis.setLabelCount(26, false) // Force labels every second for 25s window
         xAxis.textColor = textColorPrimary
+        xAxis.valueFormatter = object : ValueFormatter() {
+            override fun getFormattedValue(value: Float): String {
+                return "${value.toInt()}s"
+            }
+        }
         
         val yAxis = timelineChart.axisLeft
         yAxis.granularity = 1f
@@ -181,6 +203,7 @@ class SettingsActivity : AppCompatActivity() {
             tvAlerts.text = "Alertas enviadas: 0"
             tvEmergencyNumber.text = "Número de emergencia: -"
             tvPrediction.text = "Última predicción: Inactivo"
+            tvRemainingTime.text = "Tiempo restante: -"
             timelineChart.clear()
             sensorChart.clear()
             return
@@ -195,25 +218,64 @@ class SettingsActivity : AppCompatActivity() {
         tvAlerts.text = "Alertas enviadas: ${session.alertsTriggered}"
         tvEmergencyNumber.text = "Número de emergencia: ${session.emergencyNumber.ifBlank { "-" }}"
         tvPrediction.text = "Última predicción: ${session.currentPrediction}"
+
+        // Mostrar tiempo restante de la sesión activa
+        val remaining = MonitoringLogManager.remainingSeconds
+        if (session.sessionEndMillis == null) {
+            val min = remaining / 60
+            val sec = remaining % 60
+            tvRemainingTime.text = "Tiempo restante: ${String.format("%d:%02d", min, sec)}"
+        } else {
+            tvRemainingTime.text = "Sesión finalizada"
+        }
+
         updateChart(session)
-        updateSensorChart(session)
+        updateSensorChart()
     }
 
-    private fun updateSensorChart(session: MonitoringSessionLog) {
-        val entriesX = ArrayList<Entry>()
-        val entriesY = ArrayList<Entry>()
-        val entriesZ = ArrayList<Entry>()
-        
-        for (sensorEvent in session.sensorHistory) {
-            val t = sensorEvent.timeOffsetMillis / 1000f
-            entriesX.add(Entry(t, sensorEvent.x))
-            entriesY.add(Entry(t, sensorEvent.y))
-            entriesZ.add(Entry(t, sensorEvent.z))
+    /**
+     * Actualiza el gráfico del acelerómetro usando el snapshot del display buffer
+     * (ya throttleado a ~2Hz por MonitoringLogManager).
+     * OPTIMIZACIÓN: Diezmado adaptativo para limitar a ~100 puntos por eje,
+     * reduciendo drásticamente el costo de renderizado del chart.
+     */
+    private fun updateSensorChart() {
+        // Usar el snapshot throttleado si hay sesión activa, o sensorHistory de sesión guardada
+        val sensorData = MonitoringLogManager.displaySnapshot.ifEmpty {
+            MonitoringLogManager.getCurrentSession()?.sensorHistory
+                ?: MonitoringLogManager.loadLastSession(this)?.sensorHistory
+                ?: emptyList()
         }
-        
-        if (entriesX.isEmpty()) {
+
+        if (sensorData.isEmpty()) {
             sensorChart.clear()
             return
+        }
+
+        // Diezmado adaptativo: si hay más de MAX_CHART_POINTS, tomar 1 de cada N
+        val maxChartPoints = 100
+        val step = maxOf(1, sensorData.size / maxChartPoints)
+
+        val entriesX = ArrayList<Entry>(maxChartPoints + 1)
+        val entriesY = ArrayList<Entry>(maxChartPoints + 1)
+        val entriesZ = ArrayList<Entry>(maxChartPoints + 1)
+
+        var i = 0
+        while (i < sensorData.size) {
+            val ev = sensorData[i]
+            val t = ev.timeOffsetMillis / 1000f
+            entriesX.add(Entry(t, ev.x))
+            entriesY.add(Entry(t, ev.y))
+            entriesZ.add(Entry(t, ev.z))
+            i += step
+        }
+        // Siempre incluir el último punto para que el gráfico llegue al tiempo actual
+        val last = sensorData.last()
+        val lastT = last.timeOffsetMillis / 1000f
+        if (entriesX.isEmpty() || entriesX.last().x != lastT) {
+            entriesX.add(Entry(lastT, last.x))
+            entriesY.add(Entry(lastT, last.y))
+            entriesZ.add(Entry(lastT, last.z))
         }
 
         if (sensorChart.data != null && sensorChart.data.dataSetCount == 3) {
@@ -231,16 +293,19 @@ class SettingsActivity : AppCompatActivity() {
             val dataSetX = LineDataSet(entriesX, "Eje X").apply {
                 color = Color.RED
                 setDrawCircles(false)
+                setDrawValues(false)
                 lineWidth = 1.5f
             }
             val dataSetY = LineDataSet(entriesY, "Eje Y").apply {
                 color = Color.GREEN
                 setDrawCircles(false)
+                setDrawValues(false)
                 lineWidth = 1.5f
             }
             val dataSetZ = LineDataSet(entriesZ, "Eje Z").apply {
                 color = Color.BLUE
                 setDrawCircles(false)
+                setDrawValues(false)
                 lineWidth = 1.5f
             }
             
@@ -249,14 +314,13 @@ class SettingsActivity : AppCompatActivity() {
         }
         
         val maxX = entriesX.last().x
-        // We don't need axisMinimum since we only keep the last 10 seconds of data anyway
-        sensorChart.xAxis.resetAxisMinimum()
         
         sensorChart.setVisibleXRangeMaximum(10f)
         if (maxX > 10f) {
             sensorChart.moveViewToX(maxX - 10f)
+        } else {
+            sensorChart.invalidate()
         }
-        sensorChart.invalidate()
     }
 
     private fun updateChart(session: MonitoringSessionLog) {
@@ -286,6 +350,7 @@ class SettingsActivity : AppCompatActivity() {
             dataSet.color = colorAccent
             dataSet.setScatterShape(ScatterChart.ScatterShape.CIRCLE)
             dataSet.scatterShapeSize = 12f
+            dataSet.setDrawValues(false)
             
             val scatterData = ScatterData(dataSet)
             timelineChart.data = scatterData
@@ -300,7 +365,8 @@ class SettingsActivity : AppCompatActivity() {
         if (session.durationSeconds > 25) {
             // moveViewToX sets the LEFT edge of the viewport
             timelineChart.moveViewToX(session.durationSeconds.toFloat() - 25f)
+        } else {
+            timelineChart.invalidate()
         }
-        timelineChart.invalidate()
     }
 }

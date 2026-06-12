@@ -72,6 +72,7 @@ Si aparece un error de C++ al linkear simbolos de TensorFlow Lite Micro, revisar
 - `android.permission.INTERNET`
 - `android.permission.SEND_SMS`
 - `android.permission.CALL_PHONE`
+- `android.permission.WAKE_LOCK` (Para ejecución continua en segundo plano)
 
 Nota: para SMS y llamada, el usuario debe conceder permisos en tiempo de ejecucion.
 
@@ -95,10 +96,23 @@ Después de una caída real detectada correctamente, la app disparaba alertas co
 - **Estabilización post-alerta**: se descartan las primeras 2 ventanas de inferencia después de cancelar o completar una alerta, para que el sensor se estabilice.
 - **Timestamp de cooldown**: ahora se reinicia desde el momento en que el usuario vuelve a MainActivity, no desde cuando se detectó la caída original.
 
+### Ejecución en Segundo Plano (WakeLock) y Temporizador
+- Se integró `PowerManager.WakeLock` (PARTIAL_WAKE_LOCK) para asegurar que el procesador siga recibiendo eventos del sensor incluso si el usuario apaga la pantalla, garantizando que no se pierdan datos durante el monitoreo real.
+- Se implementó un `CountDownTimer` de 120 segundos que se muestra en la pantalla principal. Una vez que finaliza, el monitoreo se detiene automáticamente y los datos se guardan de forma síncrona, evitando la pérdida de información por interrupciones.
+
+### Optimización de Rendimiento en Logs (MonitoringLogManager)
+- Se reescribió el motor de logs usando un **Ring Buffer** basado en arreglos primitivos (`FloatArray`, `LongArray`) para eliminar la saturación del *Garbage Collector* (zero object allocation) y prevenir congelamientos en sesiones prolongadas.
+- Las escrituras al archivo JSON ahora se delegan a un hilo secundario (`ExecutorService`), evitando cualquier bloqueo en la interfaz de usuario.
+- Se implementó una lógica de compensación de inferencias para asegurar una precisión de milisegundos en la generación del JSON de salida, con gráficos diezmados (*decimated*) para mantener una interfaz rápida y fluida en la pestaña de ajustes.
+
+### Herramientas de Python para Reconstrucción (Python Tools)
+- Se creó la carpeta `python_tools/` que incluye dos scripts especializados (`interfaz_grafica.py` y `generar_videos.py`) para este modelo de 9 clases.
+- Permite la reconstrucción post-monitoreo de videos animados a 1080p y 30 FPS que muestran la evolución de la predicción (línea de tiempo) y de la física bruta del sensor (acelerómetro).
+- Cuenta con validaciones automáticas, detección de múltiples archivos JSON y uso de aceleración por hardware (NVENC) con un fallback a decodificación CPU ultrarápida.
+
 ## Limitaciones actuales
 - El numero telefonico se maneja en formato de 10 digitos (logica orientada a Mexico).
 - WhatsApp se abre con prefijo `52` fijo en el numero.
-- No incluye, por ahora, persistencia de historial de eventos.
 - El comportamiento real depende del modelo exportado en `tflite-model`.
 
 ## Estructura de carpetas (resumen)

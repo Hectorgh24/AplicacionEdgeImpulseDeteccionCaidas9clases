@@ -81,6 +81,15 @@
                 android:layout_marginTop="8dp"
                 android:text="Última predicción: Inactivo" />
 
+            <TextView
+                android:id="@+id/tvRemainingTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Tiempo restante: -"
+                android:textStyle="bold"
+                android:textColor="?attr/colorPrimary" />
+
 
 
             <TextView
