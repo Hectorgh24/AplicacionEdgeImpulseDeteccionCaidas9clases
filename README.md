@@ -129,3 +129,13 @@ Este repositorio usa el codigo y componentes incluidos en el proyecto.
 Revisar las licencias dentro de:
 - `app/src/main/cpp/edge-impulse-sdk/LICENSE`
 - `app/src/main/cpp/edge-impulse-sdk/LICENSE.3rd-party.txt`
+
+
+## 🔬 Integración con Orquestador Multimodelo (Actualización)
+Esta aplicación fue modificada para operar simultáneamente con otros 3 modelos de Inteligencia Artificial en un solo dispositivo (Poco F7) durante protocolos de investigación científica.
+
+### Mejoras Críticas Implementadas:
+1. **Inmunidad en Segundo Plano (DummyForegroundService)**: Se implementó un servicio en primer plano vinculado a una notificación de alta prioridad (IMPORTANCE_HIGH) para engañar al gestor de batería de Android 14. Esto permite que el acelerómetro siga registrando datos a 100Hz aunque la app esté minimizada.
+2. **Permisos de Sincronización de Datos**: Se inyectaron los permisos FOREGROUND_SERVICE_DATA_SYNC y POST_NOTIFICATIONS en el AndroidManifest.xml para cumplir con las políticas de seguridad de Android 14.
+3. **Arranque Forzado en onResume**: Se modificó MainActivity.kt para garantizar que el servicio de recolección se dispare automáticamente al abrir la aplicación, haciéndola resistente a cierres del sistema.
+4. **Sincronización UDP**: La aplicación escucha en el puerto 50000 comandos de un orquestador central (Python) para iniciar y detener la recolección de telemetría (JSON) exactamente al mismo milisegundo que los otros modelos.
