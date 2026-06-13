@@ -139,3 +139,10 @@ Esta aplicación fue modificada para operar simultáneamente con otros 3 modelos
 2. **Permisos de Sincronización de Datos**: Se inyectaron los permisos FOREGROUND_SERVICE_DATA_SYNC y POST_NOTIFICATIONS en el AndroidManifest.xml para cumplir con las políticas de seguridad de Android 14.
 3. **Arranque Forzado en onResume**: Se modificó MainActivity.kt para garantizar que el servicio de recolección se dispare automáticamente al abrir la aplicación, haciéndola resistente a cierres del sistema.
 4. **Sincronización UDP**: La aplicación escucha en el puerto 50000 comandos de un orquestador central (Python) para iniciar y detener la recolección de telemetría (JSON) exactamente al mismo milisegundo que los otros modelos.
+
+### ⏱️ Rendimiento de Generación de Videos (Aceleración AMF)
+Durante las pruebas de campo en un equipo HP Victus (AMD Radeon RX 6550M), el renderizado de gráficos de la telemetría tardó lo siguiente:
+* **Video de Línea de Tiempo (Predicciones)**: ~20 minutos (151.58 MB)
+* **Video de Acelerómetro (Ejes X,Y,Z)**: ~15 minutos (89.97 MB)
+* **Tiempo Total por Ciclo (120s)**: ~35 minutos.
+> Nota: El renderizado se realiza cuadro por cuadro en Python (Matplotlib) antes de ser comprimido por la GPU.
